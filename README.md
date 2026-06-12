@@ -1,93 +1,69 @@
-# csv-website
+# Trading Signals Dashboard
 
+A fully static, professional trading analytics dashboard that visualizes trading signals stored as CSV files in this repository. No backend required: the site reads the CSVs live via the GitLab API directly in the browser.
 
+## How it works
 
-## Getting started
+- One CSV file per signal date (e.g. `2026-06-14.csv`), stored anywhere in this repository.
+- Each CSV is published with new trade calls and updated daily until all trades are closed.
+- While a trade is open, daily columns are appended: `YYYY-MM-DD_MaxProfit` and `YYYY-MM-DD_MaxLoss`.
+- The dashboard automatically discovers all `.csv` files, parses the dynamic date columns, and computes all analytics client-side.
+- New or modified CSVs are picked up automatically on the next page load. **No redeploy is needed for data changes.**
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+## CSV format
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+| Column | Description |
+|---|---|
+| `Symbol` | Instrument symbol |
+| `Entry` | Entry price |
+| `SL` | Stop loss price |
+| `TP` | Target price |
+| `Status` | `Open`, `TP Hit`, `SL Hit`, or `Closed` |
+| `Exit Price` | Filled when the trade closes |
+| `Exit Date` | Filled when the trade closes |
+| `YYYY-MM-DD_MaxProfit` | Max favorable move (%) on that day (appended daily while open) |
+| `YYYY-MM-DD_MaxLoss` | Max adverse move (%) on that day (appended daily while open) |
 
-## Add your files
+The signal date is taken from the filename (`YYYY-MM-DD.csv`).
 
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+## Pages
 
+- `index.html` - KPI dashboard, active signal summary, open-trade age chart, latest trading days (incremental loading), performance charts, analytics, leaderboards, repository activity, transparency section.
+- `active-signals.html` - Live watchlist of all open trades with search, sorting, filtering, pagination, and CSV export.
+- `signals.html` - Browser for every CSV file with per-file statistics and expandable signal tables.
+- Clicking any trade opens a detail modal with daily performance table and an interactive Max Profit / Max Loss progression chart.
+
+## Deployment (GitLab Pages)
+
+1. Merge to the default branch. The included `.gitlab-ci.yml` copies the static files into `public/` and publishes them.
+2. After the first successful pipeline, the site is available at:
+   `https://devops26071-group.gitlab.io/csv-website/`
+   (see **Deploy > Pages** in the project for the exact URL).
+3. The project must be **public** (or Pages access configured) so the GitLab API can be read anonymously by visitors' browsers.
+
+## Configuration
+
+All data-source settings live at the top of `app.js` in the `CONFIG` object:
+
+```js
+const CONFIG = {
+  source: 'gitlab',              // 'gitlab' or 'github'
+  gitlab: { baseUrl: 'https://gitlab.com', projectPath: 'devops26071-group/csv-website', ref: 'main' },
+  github: { owner: 'YOUR_USER', repo: 'YOUR_REPO', branch: 'main' },
+};
 ```
-cd existing_repo
-git remote add origin https://gitlab.com/devops26071-group/csv-website.git
-git branch -M main
-git push -uf origin main
-```
 
-## Integrate with your tools
+## Migrating to GitHub Pages later
 
-* [Set up project integrations](https://gitlab.com/devops26071-group/csv-website/-/settings/integrations)
+The data layer is abstracted behind a `DataSource` adapter in `app.js`. To migrate:
 
-## Collaborate with your team
+1. Push the same files to a GitHub repository and enable GitHub Pages.
+2. In `app.js`, set `CONFIG.source = 'github'` and fill in `CONFIG.github` (owner, repo, branch).
+3. Delete `.gitlab-ci.yml` (GitHub Pages serves files directly).
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+Everything else works unchanged.
 
-## Test and Deploy
+## Performance
 
-Use the built-in continuous integration in GitLab.
-
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
-
-***
-
-# Editing this README
-
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
-
-## Name
-Choose a self-explaining name for your project.
-
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+- File contents are cached in `localStorage`, keyed by each file's git blob SHA, so unchanged CSVs are never re-downloaded.
+- Files are fetched with bounded concurrency; tables are paginated and the homepage loads day sections incrementally.

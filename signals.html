@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Signals Browser &middot; Trading Signals Dashboard</title>
+<link rel="stylesheet" href="styles.css" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
+<body data-page="signals">
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html"><span class="brand-dot"></span>Signals<span class="brand-accent">Lab</span></a>
+    <div class="nav-links">
+      <a href="index.html">Dashboard</a>
+      <a href="active-signals.html">Active Signals</a>
+      <a href="signals.html" class="active">Signals Browser</a>
+    </div>
+    <button id="theme-toggle" class="icon-btn" title="Toggle theme" aria-label="Toggle theme">&#9728;</button>
+  </div>
+</nav>
+
+<main class="container">
+  <div id="app-error" class="error-banner hidden"></div>
+  <div id="load-progress" class="load-progress">Loading signal data&hellip;</div>
+
+  <section>
+    <h2 class="section-title">All Signal Files</h2>
+    <div class="toolbar card">
+      <input id="signals-search" class="input" type="search" placeholder="Search by date (YYYY-MM-DD)&hellip;" />
+      <select id="signals-sort" class="input select">
+        <option value="desc">Newest first</option>
+        <option value="asc">Oldest first</option>
+      </select>
+      <label class="checkbox-label"><input type="checkbox" id="signals-open-only" /> Open trades only</label>
+    </div>
+    <div id="signals-list">
+      <div class="card skeleton skeleton-row"></div>
+      <div class="card skeleton skeleton-row"></div>
+      <div class="card skeleton skeleton-row"></div>
+    </div>
+    <div id="signals-pagination" class="pagination"></div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="footer-inner">
+    <a id="repo-link" href="#" target="_blank" rel="noopener">Repository</a>
+    <span id="last-refresh">Last refresh: &ndash;</span>
+    <span>Static deployment via GitLab Pages &middot; no backend</span>
+  </div>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
