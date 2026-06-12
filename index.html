@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Trading Signals Dashboard</title>
+<link rel="stylesheet" href="styles.css" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
+<body data-page="index">
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html"><span class="brand-dot"></span>Signals<span class="brand-accent">Lab</span></a>
+    <div class="nav-links">
+      <a href="index.html" class="active">Dashboard</a>
+      <a href="active-signals.html">Active Signals</a>
+      <a href="signals.html">Signals Browser</a>
+    </div>
+    <button id="theme-toggle" class="icon-btn" title="Toggle theme" aria-label="Toggle theme">&#9728;</button>
+  </div>
+</nav>
+
+<main class="container">
+  <div id="app-error" class="error-banner hidden"></div>
+  <div id="load-progress" class="load-progress">Loading signal data&hellip;</div>
+
+  <!-- 1. KPI Dashboard -->
+  <section id="kpi-section">
+    <h2 class="section-title">Performance Overview</h2>
+    <div id="kpi-grid" class="kpi-grid">
+      <div class="kpi-card skeleton"></div><div class="kpi-card skeleton"></div><div class="kpi-card skeleton"></div>
+      <div class="kpi-card skeleton"></div><div class="kpi-card skeleton"></div><div class="kpi-card skeleton"></div>
+      <div class="kpi-card skeleton"></div><div class="kpi-card skeleton"></div><div class="kpi-card skeleton"></div>
+    </div>
+  </section>
+
+  <!-- 2. Active signals summary -->
+  <section id="active-summary-section">
+    <h2 class="section-title">Currently Active Signals</h2>
+    <div id="active-summary" class="kpi-grid kpi-grid-5">
+      <div class="kpi-card skeleton"></div><div class="kpi-card skeleton"></div><div class="kpi-card skeleton"></div>
+      <div class="kpi-card skeleton"></div><div class="kpi-card skeleton"></div>
+    </div>
+    <div class="section-actions"><a class="btn btn-primary" href="active-signals.html">View All Active Signals &rarr;</a></div>
+  </section>
+
+  <!-- 3. Open trades by age -->
+  <section id="age-section">
+    <h2 class="section-title">Open Trades by Age</h2>
+    <div class="card chart-card"><canvas id="chart-age"></canvas></div>
+  </section>
+
+  <!-- 4. Latest trading days -->
+  <section id="latest-days-section">
+    <h2 class="section-title">Latest Trading Days</h2>
+    <div id="latest-days"></div>
+    <div class="section-actions"><button id="load-more-days" class="btn btn-secondary hidden">Load More</button></div>
+  </section>
+
+  <!-- 5. Performance charts -->
+  <section id="charts-section">
+    <h2 class="section-title">Performance Charts</h2>
+    <h3 class="sub-title">Overall Results</h3>
+    <div class="chart-grid">
+      <div class="card chart-card"><h4>Win vs Loss</h4><canvas id="chart-winloss"></canvas></div>
+      <div class="card chart-card"><h4>Monthly Performance (Total Return %)</h4><canvas id="chart-monthly"></canvas></div>
+      <div class="card chart-card"><h4>Signal Count by Month</h4><canvas id="chart-count-month"></canvas></div>
+      <div class="card chart-card"><h4>Average Return by Month</h4><canvas id="chart-avg-month"></canvas></div>
+    </div>
+    <h3 class="sub-title">Open Trade Analysis</h3>
+    <div class="chart-grid">
+      <div class="card chart-card"><h4>Open Trade Duration Distribution</h4><canvas id="chart-duration"></canvas></div>
+      <div class="card chart-card"><h4>Average Daily Drawdown</h4><canvas id="chart-daily-loss"></canvas></div>
+      <div class="card chart-card"><h4>Average Daily Maximum Profit</h4><canvas id="chart-daily-profit"></canvas></div>
+    </div>
+  </section>
+
+  <!-- 6. Analytics -->
+  <section id="analytics-section">
+    <h2 class="section-title">Analytics Dashboard</h2>
+    <div class="analytics-grid">
+      <div class="card"><h4>Performance Metrics</h4><dl id="perf-metrics" class="metric-list"></dl></div>
+      <div class="card"><h4>Risk Metrics</h4><dl id="risk-metrics" class="metric-list"></dl></div>
+      <div class="card"><h4>Strategy Statistics</h4><dl id="strategy-metrics" class="metric-list"></dl></div>
+    </div>
+  </section>
+
+  <!-- 7. Leaderboards -->
+  <section id="leaderboard-section">
+    <h2 class="section-title">Leaderboards</h2>
+    <div class="leaderboard-grid">
+      <div class="card"><h4>Best Trades (Top 20)</h4><div id="lb-best" class="table-wrap"></div></div>
+      <div class="card"><h4>Worst Trades (Bottom 20)</h4><div id="lb-worst" class="table-wrap"></div></div>
+      <div class="card"><h4>Best Performing Symbols</h4><div id="lb-symbols" class="table-wrap"></div></div>
+      <div class="card"><h4>Most Active Symbols</h4><div id="lb-active" class="table-wrap"></div></div>
+    </div>
+  </section>
+
+  <!-- 8. Recent activity -->
+  <section id="activity-section">
+    <h2 class="section-title">Recent Repository Activity</h2>
+    <div class="analytics-grid">
+      <div class="card"><h4>Latest CSV Files</h4><ul id="act-latest-files" class="activity-list"></ul></div>
+      <div class="card"><h4>Recent Commits</h4><ul id="act-commits" class="activity-list"></ul></div>
+      <div class="card"><h4>Recently Closed Trades</h4><ul id="act-closed" class="activity-list"></ul></div>
+    </div>
+  </section>
+
+  <!-- Transparency -->
+  <section id="transparency-section">
+    <h2 class="section-title">Transparency &amp; Verifiability</h2>
+    <div class="card transparency">
+      <ul>
+        <li><strong>Published before outcomes are known.</strong> Trade signals are committed to this repository when they are issued, before any result exists.</li>
+        <li><strong>Continuously updated.</strong> CSV files are updated over time as trades progress, recording daily maximum profit and loss until every trade closes.</li>
+        <li><strong>Git commit history is the audit trail.</strong> Every change to every CSV is permanently recorded with a timestamp.</li>
+        <li><strong>Historical changes are publicly visible.</strong> Anyone can inspect the full revision history of any signal file.</li>
+        <li><strong>Verifiable performance.</strong> All analytics on this site are computed live in your browser from the raw CSV files, with nothing pre-aggregated or hidden.</li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="footer-inner">
+    <a id="repo-link" href="#" target="_blank" rel="noopener">Repository</a>
+    <span id="last-refresh">Last refresh: &ndash;</span>
+    <span>Static deployment via GitLab Pages &middot; no backend</span>
+  </div>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

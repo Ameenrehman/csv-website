@@ -1,0 +1,14 @@
+# Deploys the static dashboard to GitLab Pages.
+# Data (CSV files) is read live via the GitLab API at page load,
+# so the site does NOT need to be redeployed when CSVs change.
+pages:
+  stage: deploy
+  image: alpine:latest
+  script:
+    - mkdir -p public
+    - cp index.html active-signals.html signals.html styles.css app.js public/
+  artifacts:
+    paths:
+      - public
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

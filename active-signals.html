@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Active Signals &middot; Trading Signals Dashboard</title>
+<link rel="stylesheet" href="styles.css" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
+<body data-page="active">
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html"><span class="brand-dot"></span>Signals<span class="brand-accent">Lab</span></a>
+    <div class="nav-links">
+      <a href="index.html">Dashboard</a>
+      <a href="active-signals.html" class="active">Active Signals</a>
+      <a href="signals.html">Signals Browser</a>
+    </div>
+    <button id="theme-toggle" class="icon-btn" title="Toggle theme" aria-label="Toggle theme">&#9728;</button>
+  </div>
+</nav>
+
+<main class="container">
+  <div id="app-error" class="error-banner hidden"></div>
+  <div id="load-progress" class="load-progress">Loading signal data&hellip;</div>
+
+  <section>
+    <h2 class="section-title">Live Watchlist <span class="badge badge-open" id="active-count-badge">&ndash;</span></h2>
+    <div class="toolbar card">
+      <input id="active-search" class="input" type="search" placeholder="Search symbol, date or status&hellip;" />
+      <select id="active-page-size" class="input select">
+        <option value="25">25 / page</option>
+        <option value="50">50 / page</option>
+        <option value="100">100 / page</option>
+      </select>
+      <button id="active-export" class="btn btn-secondary">Export CSV</button>
+    </div>
+    <div id="active-table" class="card table-wrap">
+      <div class="skeleton skeleton-table"></div>
+    </div>
+    <div id="active-pagination" class="pagination"></div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="footer-inner">
+    <a id="repo-link" href="#" target="_blank" rel="noopener">Repository</a>
+    <span id="last-refresh">Last refresh: &ndash;</span>
+    <span>Static deployment via GitLab Pages &middot; no backend</span>
+  </div>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
