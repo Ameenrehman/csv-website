@@ -14,8 +14,10 @@ Built 2026-08-03 against 64 orderbook files / 450 signals spanning 2026-04-30 �
                           Symbol, Buy/Sell, CBT, Target Price   (4 columns, that's all)
                           you commit + push
 
-2. CRON  11:00 UTC Mon–Fri   .github/workflows/daily-update.yml
-   (decoupled from your push — runs on schedule, not on it)
+2. TRIGGER   .github/workflows/daily-update.yml  fires on any of:
+       • push touching orderbook/**   (immediate)
+       • cron 11:00 UTC Mon–Fri       (catch-all)
+       • manual dispatch              (Actions tab, optional date / dry_run)
          │
          ├─ checkout
          ├─ pip install -r requirements.txt
@@ -35,15 +37,12 @@ Built 2026-08-03 against 64 orderbook files / 450 signals spanning 2026-04-30 �
               Explicitly ignores orderbook/**, *.csv, **/*.md.
 ```
 
-Two things that are commonly assumed and are **not** true here:
+One thing that is commonly assumed and is **not** true here: **Pages is never rebuilt for data.**
+`app.js` reads CSVs live from the GitHub API, so a data commit shows up on refresh with no build
+at all. `pages.yml` exists only for the static shell.
 
-- **Pushing a CSV does not trigger the update.** The cron does, on its own schedule. The two are
-  independent. Push new signals any time before the next day's run.
-- **Pages is never rebuilt for data.** `app.js` reads CSVs live from the GitHub API, so a data
-  commit shows up on refresh with no build at all. `pages.yml` exists only for the static shell.
-
-A useful side effect: pushes made with `GITHUB_TOKEN` do not trigger other workflows, so the daily
-data commit cannot start a Pages rebuild loop even by accident.
+The updater cannot re-trigger itself either — its own commit is pushed with `GITHUB_TOKEN`, and
+`GITHUB_TOKEN` pushes never start workflows. That is what makes the push trigger safe.
 
 ---
 
@@ -236,7 +235,60 @@ switched to `'github'` some time ago.
 `orderbook2026-06-24.csv` and `orderbook2026-07-21.csv` contain a header and no rows — days the
 scanner produced nothing. Handled: they are skipped, not treated as errors.
 
-### 6.8 Symbols recur across files
+### 6.8 Overwriting a tracked file destroys history — OPERATIONAL HAZARD
+
+Hit for real: `orderbook2026-05-06.csv` was replaced with fresh 4-column scanner output, discarding
+59 tracked sessions (354 columns) and both recorded exits.
+
+The updater is **additive**. It appends the newest session and never re-derives the past, so a
+tracked file *is* the record of its own history. Rebuilding it is bounded by
+`--max-lookback-days` (default 30), and that file was 89 days old:
+
+```
+! Oldest open file trails 2026-05-07; clamping to 2026-07-04
+```
+
+Everything before 2026-07-04 would have been unrecoverable, and worse, `APH` (really closed
+2026-05-28) and `RDDT` (2026-05-08) would have been re-evaluated from July — left open, or stamped
+with fabricated July exit dates. Restored from git before it reached the remote.
+
+**Rule: add new dated files, never overwrite one the pipeline has written to.** The clamp warning
+is the tell that a tracked file was reset. Making the script *refuse* rather than warn in this
+case is an open suggestion (§9).
+
+### 6.9 Schema changes were dropped on no-op runs — FIXED
+
+`process()` returned early whenever there was no session to apply — a weekend, or an already
+current run — discarding schema work done during load. New tracking columns, `Direction`
+backfills and status normalisation were computed and then thrown away. Any run landing on a
+non-trading day silently did nothing.
+
+Writing now always happens; the no-session case falls through to the write loop instead of
+returning.
+
+### 6.10 Open rows carried a blank Status — FIXED
+
+`ensure_columns` created `Status` with an empty default and nothing ever filled it in. Both
+readers treat blank as open (`norm_status("")` and `normStatus('')` both return `open`), so
+nothing misbehaved — but the CSVs were not self-describing, and a blank cell is indistinguishable
+from a missing value to anything else reading them. Now written explicitly: 214 `Open`,
+236 `TP Hit`.
+
+### 6.11 Per-day metrics were computed but not displayed — FIXED
+
+`dayMaxProfit` / `dayMaxLoss` parsed correctly from day one but rendered in exactly one place —
+the trade detail modal — so they were invisible without clicking a row. The Active Signals table
+showed the *running* values under the labels "Max Profit" / "Max Loss", which read as if they were
+the daily figures. Both per-day columns are now on that table, sortable, and in its CSV export.
+
+### 6.12 The corporate network blocks the data host
+
+From the OMA Emirates network, `api.github.com` and `github.com` resolve but
+`raw.githubusercontent.com` and `*.github.io` do not. Since `app.js` fetches every CSV from
+`raw.githubusercontent.com`, the dashboard lists files and then loads no data when opened from
+work. It behaves normally elsewhere. Accepted as-is; §9 records the fix if it ever matters.
+
+### 6.13 Symbols recur across files
 
 366 unique symbols across 450 rows; **73 appear in more than one file** (`WMS`, `CRM`, `PATH`,
 `ADBE`, `VECO`, `TEX` each appear 3×). Each row is tracked as its own independent position, which
@@ -318,6 +370,24 @@ on first load, so this becomes a page-load problem before it becomes a storage p
 **No position sizing.** Everything is percentages. There is no quantity, capital, or currency P&L
 anywhere in the schema, so there is no portfolio-level equity curve — only per-signal returns.
 
-**The five demo CSVs still count.** `2026-06-*.csv` at the repo root are synthetic and are mixed
-into every dashboard aggregate. Delete them when you want the statistics to reflect only real
-signals.
+---
+
+## 9. Open suggestions
+
+Offered, not implemented — each is small and independent.
+
+**Refuse instead of warn when a tracked file is reset.** Today the clamp in §6.8 prints a warning
+and proceeds, producing a truncated rebuild with the warning buried in the log. Detecting "file
+has no daily columns but its signal date is older than the lookback window" and failing the run
+would turn that accident into a hard stop.
+
+**Serve CSVs same-origin instead of via `raw.githubusercontent.com`.** `pages.yml` uploads the
+repo root, so Pages already serves the data files. Keeping discovery on the API (1 request) and
+fetching contents by relative path would fix §6.12 and remove an unauthenticated rate-limit
+exposure — 69 files against a 60-requests/hour ceiling is uncomfortably close if fetches ever move
+to the API.
+
+**Bound file growth.** `--max-hold N` closes unresolved rows after N sessions. Not enabled, by
+choice; see §8.
+
+**Delete `.gitlab-ci.yml`.** Dead config that reads as if it deploys something.

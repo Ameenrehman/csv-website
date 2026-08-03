@@ -93,14 +93,40 @@ python update_signals.py --max-lookback-days 120
 
 | Workflow | Trigger | Does |
 |---|---|---|
-| `.github/workflows/daily-update.yml` | 11:00 UTC Mon–Fri, or manual | Runs the updater, commits, pushes |
+| `.github/workflows/daily-update.yml` | Push to `orderbook/**`, 11:00 UTC Mon–Fri, or manual | Runs the updater, commits, pushes |
 | `.github/workflows/pages.yml` | Push to `main` (data commits ignored) | Publishes the site to GitHub Pages |
+
+To run the updater by hand without committing anything: **Actions → Daily signal update → Run
+workflow**, with `dry_run` set to `true`. It performs the whole job and reports what it would
+change.
+
+The updater cannot re-trigger itself: its own commit is pushed with `GITHUB_TOKEN`, and
+`GITHUB_TOKEN` pushes never start workflows.
 
 `pages.yml` requires **Settings → Pages → Source = "GitHub Actions"**. If it is left on
 "Deploy from a branch", the deploy step fails — only one source can be active.
 
 `.gitlab-ci.yml` is GitLab-only syntax and does nothing on GitHub. It is kept for reference and
 can be deleted.
+
+## Adding new signals
+
+**Add new dated files. Never overwrite one the pipeline has already written to.**
+
+```
+orderbook/orderbook2026-08-04.csv    new file, 4 columns   -> safe
+orderbook/orderbook2026-05-06.csv    already tracked       -> do not touch
+```
+
+The updater is additive: it appends the newest session and never re-derives the past. Once a file
+carries tracking columns, that file *is* the record of its own history. Overwriting it with fresh
+scanner output destroys that history, and only the last `--max-lookback-days` of it can be
+rebuilt — so exits that happened earlier are lost or, worse, re-dated to whatever the price did
+inside the shortened window. The script warns loudly (`! Oldest open file trails …`) when it has
+to clamp, which is the signal that a tracked file was reset.
+
+A newly added file is picked up on push, and starts accumulating columns from the **next**
+session — its own signal day is skipped, because the position opens at `CBT` that day.
 
 ## Pages
 
@@ -138,8 +164,11 @@ a new column with a reserved alias (`Stop`, `Target`, `Exit`, `State`, `Stock`, 
   long-running files keep widening by six columns per session; if load time becomes a problem,
   set `--max-hold` to bound it.
 
-## Demo data
+## Current data
 
-The five `2026-06-*.csv` files at the repo root are synthetic demo data in the older NSE-style
-format. They are still rendered by the dashboard and mixed into its aggregate statistics. Delete
-them once you no longer want them influencing the numbers.
+64 files, 450 signals, 2026-04-30 → 2026-07-31. **227 Buy / 223 Sell**, **236 TP Hit / 214 Open**.
+
+The five synthetic `2026-06-*.csv` demo files that used to sit at the repo root have been removed,
+so every dashboard statistic now reflects real signals only. `app.js` still understands that older
+NSE-style layout (`Entry`/`SL`/`TP` with no `Buy/Sell`), so dropping such a file back in would
+still render correctly.
