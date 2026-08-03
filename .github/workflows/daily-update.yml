@@ -8,9 +8,15 @@
 name: Daily signal update
 
 on:
+  # A new orderbook file lands -> pick it up straight away. This cannot loop:
+  # the job's own push uses GITHUB_TOKEN, and GITHUB_TOKEN pushes never
+  # trigger workflows.
+  push:
+    branches: [main]
+    paths:
+      - 'orderbook/**'
   schedule:
-    # 11:00 UTC = 16:30 IST, one hour after the NSE close, so the daily bar
-    # has settled. GitHub's scheduler is best-effort and can lag by minutes.
+    # 11:00 UTC = 16:30 IST. GitHub's scheduler is best-effort and can lag.
     - cron: '0 11 * * 1-5'
   workflow_dispatch:
     inputs:
