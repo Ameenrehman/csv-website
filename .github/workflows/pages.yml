@@ -1,0 +1,46 @@
+# Publishes the dashboard to GitHub Pages, replacing what .gitlab-ci.yml did
+# for GitLab Pages (that file is GitLab-only syntax and is inert on GitHub).
+#
+# REQUIRED ONE-TIME SETUP: Settings -> Pages -> Source must be set to
+# "GitHub Actions". If it is left on "Deploy from a branch" this workflow
+# fails at the deploy step, because only one source can be active at a time.
+#
+# Data commits are ignored on purpose: app.js fetches the CSVs from the GitHub
+# API at page load, so new orderbook data needs no redeploy. Only the static
+# shell (HTML/CSS/JS) does.
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'orderbook/**'
+      - '*.csv'
+      - '**/*.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      # Publishing the repo root mirrors the current branch-based deploy, so
+      # the served site is byte-for-byte what you have today.
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+      - id: deployment
+        uses: actions/deploy-pages@v4

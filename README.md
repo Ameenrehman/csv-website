@@ -1,69 +1,144 @@
 # Trading Signals Dashboard
 
-A fully static, professional trading analytics dashboard that visualizes trading signals stored as CSV files in this repository. No backend required: the site reads the CSVs live via the GitLab API directly in the browser.
+A fully static trading analytics dashboard that visualizes signals stored as CSV files in this
+repository. No backend: the site reads the CSVs live via the GitHub API directly in the browser.
 
 ## How it works
 
-- One CSV file per signal date (e.g. `2026-06-14.csv`), stored anywhere in this repository.
-- Each CSV is published with new trade calls and updated daily until all trades are closed.
-- While a trade is open, daily columns are appended: `YYYY-MM-DD_MaxProfit` and `YYYY-MM-DD_MaxLoss`.
-- The dashboard automatically discovers all `.csv` files, parses the dynamic date columns, and computes all analytics client-side.
-- New or modified CSVs are picked up automatically on the next page load. **No redeploy is needed for data changes.**
+- `orderbook/` is the source of truth. One CSV per signal date, named `orderbookYYYY-MM-DD.csv`,
+  produced daily by the upstream scanner.
+- `update_signals.py` runs after each US close, appends that session's P&L columns to every row
+  that is still open, and marks rows that reached their target.
+- The dashboard discovers every `.csv` in the repo tree, parses the dynamic date columns, and
+  computes all analytics client-side.
+- New or modified CSVs are picked up on the next page load. **No redeploy is needed for data
+  changes** — only for changes to the HTML/CSS/JS shell.
 
 ## CSV format
 
+The scanner only has to emit the first four columns. Everything else is added and maintained by
+`update_signals.py`.
+
 | Column | Description |
 |---|---|
-| `Symbol` | Instrument symbol |
-| `Entry` | Entry price |
-| `SL` | Stop loss price |
-| `TP` | Target price |
-| `Status` | `Open`, `TP Hit`, `SL Hit`, or `Closed` |
-| `Exit Price` | Filled when the trade closes |
-| `Exit Date` | Filled when the trade closes |
-| `YYYY-MM-DD_MaxProfit` | Max favorable move (%) on that day (appended daily while open) |
-| `YYYY-MM-DD_MaxLoss` | Max adverse move (%) on that day (appended daily while open) |
+| `Symbol` | Ticker (US-listed; no exchange suffix) |
+| `Buy/Sell` | `Buy` = long, `Sell` = short. Drives the sign of every metric below |
+| `CBT` | Entry price. The position is treated as filled here on the signal date |
+| `Target Price` | Take-profit level |
+| `SL` | Stop loss. Optional — when absent or blank, only the target can close a row |
+| `Status` | `Open`, `TP Hit`, `SL Hit`, or `Expired` |
+| `ExitPrice` / `ExitDate` | Filled when the row closes |
 
-The signal date is taken from the filename (`YYYY-MM-DD.csv`).
+Then six columns per tracked session, appended while the row is open:
+
+| Column | Description |
+|---|---|
+| `<date>_DayMaxProfit` | Best % move in favour, that session only |
+| `<date>_DayMaxLoss` | Worst % move against, that session only |
+| `<date>_MaxProfit` | Running best since entry (MFE) |
+| `<date>_MaxLoss` | Running worst since entry (MAE) |
+| `<date>_MaxDrawdown` | Running worst decline from the running peak (always ≤ 0) |
+| `<date>_CurrentPnL` | % at the close |
+
+All percentages are relative to `CBT` and direction-aware: a `Sell` row profits when price falls.
+Once a row closes, its cells stay blank from the exit day onward, so a file stops growing when
+every signal in it is closed. The signal date comes from the filename.
+
+### Exit conventions
+
+- A target/stop counts as hit when the session's High (or Low, for a short) reaches the level.
+- On the exit day the extreme is clamped to the level rather than the raw bar, because that is
+  where the order would have filled.
+- If price **gaps** through the level — the session opens already beyond it — the fill is the
+  open, not the level, and that session collapses to a single point.
+- If one session touches both the target and the stop, daily bars cannot say which came first.
+  `--tie` decides (default `sl`, the conservative read) and every affected row is printed so you
+  can check it against intraday data.
+
+## The daily updater
+
+```bash
+python -m venv .venv
+.venv/Scripts/pip install -r requirements.txt        # Linux/macOS: .venv/bin/pip
+
+python update_signals.py                              # catch up to the latest close
+python update_signals.py --dry-run                    # show what would change
+python update_signals.py --date 2026-08-03            # one specific session
+python update_signals.py --commit --push              # update, commit and push
+```
+
+Useful flags:
+
+| Flag | Default | Purpose |
+|---|---|---|
+| `--data-dir` | `orderbook/` | Directory of dated CSVs |
+| `--suffix` | *(empty)* | yfinance ticker suffix; use `.NS` for NSE |
+| `--tie` | `sl` | Which level wins when a session touches both |
+| `--max-lookback-days` | `30` | Cap on how far back a catch-up run backfills |
+| `--max-hold` | `0` | Close unresolved rows after N sessions (`0` = never expire) |
+| `--offline-prices` | — | Read OHLC from a `Symbol,Date,Open,High,Low,Close` CSV instead of yfinance |
+| `--force` | off | Recompute sessions whose columns already exist |
+
+The script is idempotent: re-running for a session that is already present is a no-op, so a
+retried or duplicated job cannot corrupt the data. Prices are fetched unadjusted so they stay
+comparable to the `CBT` recorded at signal time.
+
+To backfill a brand-new orderbook from scratch, raise the lookback:
+
+```bash
+python update_signals.py --max-lookback-days 120
+```
+
+## Automation
+
+| Workflow | Trigger | Does |
+|---|---|---|
+| `.github/workflows/daily-update.yml` | 11:00 UTC Mon–Fri, or manual | Runs the updater, commits, pushes |
+| `.github/workflows/pages.yml` | Push to `main` (data commits ignored) | Publishes the site to GitHub Pages |
+
+`pages.yml` requires **Settings → Pages → Source = "GitHub Actions"**. If it is left on
+"Deploy from a branch", the deploy step fails — only one source can be active.
+
+`.gitlab-ci.yml` is GitLab-only syntax and does nothing on GitHub. It is kept for reference and
+can be deleted.
 
 ## Pages
 
-- `index.html` - KPI dashboard, active signal summary, open-trade age chart, latest trading days (incremental loading), performance charts, analytics, leaderboards, repository activity, transparency section.
-- `active-signals.html` - Live watchlist of all open trades with search, sorting, filtering, pagination, and CSV export.
-- `signals.html` - Browser for every CSV file with per-file statistics and expandable signal tables.
-- Clicking any trade opens a detail modal with daily performance table and an interactive Max Profit / Max Loss progression chart.
-
-## Deployment (GitLab Pages)
-
-1. Merge to the default branch. The included `.gitlab-ci.yml` copies the static files into `public/` and publishes them.
-2. After the first successful pipeline, the site is available at:
-   `https://devops26071-group.gitlab.io/csv-website/`
-   (see **Deploy > Pages** in the project for the exact URL).
-3. The project must be **public** (or Pages access configured) so the GitLab API can be read anonymously by visitors' browsers.
+- `index.html` — KPI dashboard, active signal summary, open-trade age chart, latest trading days,
+  performance charts, analytics, leaderboards, repository activity.
+- `active-signals.html` — Live watchlist of open trades with side, current P&L, max profit/loss
+  and max drawdown; search, sorting, pagination, CSV export.
+- `signals.html` — Browser for every CSV file with per-file statistics.
+- Clicking any trade opens a detail modal with the full six-metric daily table and a progression
+  chart.
 
 ## Configuration
 
-All data-source settings live at the top of `app.js` in the `CONFIG` object:
+Data-source settings live at the top of `app.js`:
 
 ```js
 const CONFIG = {
-  source: 'gitlab',              // 'gitlab' or 'github'
-  gitlab: { baseUrl: 'https://gitlab.com', projectPath: 'devops26071-group/csv-website', ref: 'main' },
-  github: { owner: 'YOUR_USER', repo: 'YOUR_REPO', branch: 'main' },
+  source: 'github',              // 'gitlab' or 'github'
+  github: { owner: 'Ameenrehman', repo: 'csv-website', branch: 'main' },
 };
 ```
 
-## Migrating to GitHub Pages later
-
-The data layer is abstracted behind a `DataSource` adapter in `app.js`. To migrate:
-
-1. Push the same files to a GitHub repository and enable GitHub Pages.
-2. In `app.js`, set `CONFIG.source = 'github'` and fill in `CONFIG.github` (owner, repo, branch).
-3. Delete `.gitlab-ci.yml` (GitHub Pages serves files directly).
-
-Everything else works unchanged.
+Column lookup is by name, not position, so columns can be reordered or added freely. Avoid naming
+a new column with a reserved alias (`Stop`, `Target`, `Exit`, `State`, `Stock`, `Ticker`, `Side`,
+`CBT`) or it will be captured as one of the known fields.
 
 ## Performance
 
-- File contents are cached in `localStorage`, keyed by each file's git blob SHA, so unchanged CSVs are never re-downloaded.
-- Files are fetched with bounded concurrency; tables are paginated and the homepage loads day sections incrementally.
+- File contents are cached in `localStorage`, keyed by each file's git blob SHA, so unchanged CSVs
+  are never re-downloaded.
+- Files are fetched with bounded concurrency; tables are paginated and the homepage loads day
+  sections incrementally.
+- Note that every visitor downloads every CSV on first load. Signals never expire by default, so
+  long-running files keep widening by six columns per session; if load time becomes a problem,
+  set `--max-hold` to bound it.
+
+## Demo data
+
+The five `2026-06-*.csv` files at the repo root are synthetic demo data in the older NSE-style
+format. They are still rendered by the dashboard and mixed into its aggregate statistics. Delete
+them once you no longer want them influencing the numbers.

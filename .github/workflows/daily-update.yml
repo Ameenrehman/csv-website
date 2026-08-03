@@ -1,0 +1,68 @@
+# Appends each trading day's P&L columns to the open signal CSVs and pushes
+# the result back to main.
+#
+# No Pages rebuild is required for the data to appear: app.js reads the CSVs
+# live from the GitHub API on every page load, so the dashboard reflects the
+# new commit as soon as it lands. If Pages is set to "Deploy from a branch"
+# it will also rebuild on this push; that is harmless either way.
+name: Daily signal update
+
+on:
+  schedule:
+    # 11:00 UTC = 16:30 IST, one hour after the NSE close, so the daily bar
+    # has settled. GitHub's scheduler is best-effort and can lag by minutes.
+    - cron: '0 11 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Process up to this session (YYYY-MM-DD). Blank = today.'
+        required: false
+        type: string
+      dry_run:
+        description: 'Report changes without committing'
+        required: false
+        type: boolean
+        default: false
+
+# Never let two runs rewrite the same CSVs at once.
+concurrency:
+  group: daily-signal-update
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Update signal CSVs
+        run: |
+          set -euo pipefail
+          ARGS=""
+          if [ -n "${DATE}" ]; then ARGS="${ARGS} --date ${DATE}"; fi
+          if [ "${DRY_RUN}" = "true" ]; then
+            ARGS="${ARGS} --dry-run"
+          else
+            ARGS="${ARGS} --commit --push"
+          fi
+          echo "Running: python update_signals.py${ARGS}"
+          python update_signals.py ${ARGS}
+        env:
+          DATE: ${{ inputs.date }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          # git needs a committer identity; these env vars supply it without
+          # writing to the runner's global config.
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com

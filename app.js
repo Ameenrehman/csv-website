@@ -136,10 +136,20 @@ function parseCSV(text) {
   return rows.filter(r => r.some(v => v.trim() !== ''));
 }
 
-const DAILY_RE = /^(\d{4}-\d{2}-\d{2})[_ ]?Max[_ ]?(Profit|Loss)$/i;
+const DAILY_RE = /^(\d{4}-\d{2}-\d{2})[_ ]?(.+)$/;
+// Daily metric column -> key on a trade's `daily` entry. maxProfit/maxLoss stay
+// mapped to the running series so files written before the six-metric format
+// keep rendering exactly as they did.
+const DAILY_METRICS = {
+  daymaxprofit: 'dayMaxProfit', daymaxloss: 'dayMaxLoss',
+  maxprofit: 'maxProfit', maxloss: 'maxLoss',
+  maxdrawdown: 'maxDrawdown', currentpnl: 'currentPnL',
+};
 const HEADER_ALIASES = {
   symbol: ['symbol', 'ticker', 'stock'],
-  entry: ['entry', 'entry price', 'entryprice', 'entry_price'],
+  // The orderbook encodes direction as Buy/Sell and entry as CBT.
+  direction: ['direction', 'side', 'dir', 'buy/sell', 'buysell', 'buy / sell'],
+  entry: ['entry', 'entry price', 'entryprice', 'entry_price', 'cbt'],
   sl: ['sl', 'stop loss', 'stoploss', 'stop_loss', 'stop'],
   tp: ['tp', 'target', 'target price', 'targetprice', 'target_price', 'tp price'],
   status: ['status', 'state'],
@@ -154,6 +164,12 @@ function normStatus(s) {
   if (t.includes('sl') || t.includes('stop')) return 'sl';
   return 'closed';
 }
+// Absent or unrecognised means long, matching how the demo CSVs were written.
+function normDirection(s) {
+  const t = String(s || '').trim().toLowerCase();
+  return (t.startsWith('sell') || t.startsWith('short') || t === '-1') ? 'short' : 'long';
+}
+const DIR_LABEL = { long: 'Long', short: 'Short' };
 const STATUS_LABEL = { open: 'Open', tp: 'TP Hit', sl: 'SL Hit', closed: 'Closed' };
 const STATUS_BADGE = { open: 'badge-open', tp: 'badge-tp', sl: 'badge-sl', closed: 'badge-closed' };
 
@@ -166,11 +182,13 @@ function buildTrades(file, text) {
   for (const [key, aliases] of Object.entries(HEADER_ALIASES)) {
     col[key] = lower.findIndex(h => aliases.includes(h));
   }
-  // Dynamic daily columns: YYYY-MM-DD_MaxProfit / YYYY-MM-DD_MaxLoss
+  // Dynamic daily columns: YYYY-MM-DD_<metric>, six per tracked session.
   const dailyCols = [];
   headers.forEach((h, i) => {
     const m = h.match(DAILY_RE);
-    if (m) dailyCols.push({ idx: i, date: m[1], kind: m[2].toLowerCase() });
+    if (!m) return;
+    const key = DAILY_METRICS[m[2].replace(/[_ ]/g, '').toLowerCase()];
+    if (key) dailyCols.push({ idx: i, date: m[1], key });
   });
   const signalDate = parseDate(file.name) || parseDate(file.path);
   const trades = [];
@@ -183,16 +201,23 @@ function buildTrades(file, text) {
     for (const dc of dailyCols) {
       const v = num(row[dc.idx]);
       if (v == null) continue;
-      if (!dailyMap.has(dc.date)) dailyMap.set(dc.date, { date: dc.date, maxProfit: null, maxLoss: null });
-      dailyMap.get(dc.date)[dc.kind === 'profit' ? 'maxProfit' : 'maxLoss'] = v;
+      if (!dailyMap.has(dc.date)) dailyMap.set(dc.date, {
+        date: dc.date, maxProfit: null, maxLoss: null,
+        dayMaxProfit: null, dayMaxLoss: null, maxDrawdown: null, currentPnL: null,
+      });
+      dailyMap.get(dc.date)[dc.key] = v;
     }
     const daily = [...dailyMap.values()].sort((a, b) => a.date.localeCompare(b.date));
     const statusNorm = normStatus(get('status'));
+    const direction = normDirection(get('direction'));
     const entry = num(get('entry'));
     const exitPrice = num(get('exitPrice'));
     const exitDate = parseDate(get('exitDate'));
     let returnPct = null;
-    if (statusNorm !== 'open' && entry && exitPrice != null) returnPct = ((exitPrice - entry) / entry) * 100;
+    // A short earns the inverse of the price move.
+    if (statusNorm !== 'open' && entry && exitPrice != null) {
+      returnPct = ((exitPrice - entry) / entry) * 100 * (direction === 'short' ? -1 : 1);
+    }
     const holdingDays = statusNorm !== 'open'
       ? (daysBetween(signalDate, exitDate) ?? (daily.length || null))
       : null;
@@ -200,7 +225,7 @@ function buildTrades(file, text) {
     trades.push({
       id: `${file.path}#${r}`, file: file.path, fileName: file.name,
       symbol, entry, sl: num(get('sl')), tp: num(get('tp')),
-      status: get('status') || 'Open', statusNorm,
+      direction, status: get('status') || 'Open', statusNorm,
       exitPrice, exitDateRaw: get('exitDate'), exitDate,
       signalDate, signalDateStr: signalDate ? signalDate.toISOString().slice(0, 10) : '\u2013',
       daily, returnPct, holdingDays, daysOpen,
@@ -328,12 +353,15 @@ function tradeRow(t, cols) {
       case 'daysOpen': return `<td>${t.daysOpen ?? '\u2013'}</td>`;
       case 'latestMP': { const d = t.daily[t.daily.length - 1]; return `<td class="${pctClass(d?.maxProfit)}">${fmtPct(d?.maxProfit)}</td>`; }
       case 'latestML': { const d = t.daily[t.daily.length - 1]; return `<td class="${pctClass(d?.maxLoss)}">${fmtPct(d?.maxLoss)}</td>`; }
+      case 'latestDD': { const d = t.daily[t.daily.length - 1]; return `<td class="${pctClass(d?.maxDrawdown)}">${fmtPct(d?.maxDrawdown)}</td>`; }
+      case 'latestPnL': { const d = t.daily[t.daily.length - 1]; return `<td class="${pctClass(d?.currentPnL)}">${fmtPct(d?.currentPnL)}</td>`; }
+      case 'direction': return `<td><span class="badge ${t.direction === 'short' ? 'badge-sl' : 'badge-tp'}">${DIR_LABEL[t.direction]}</span></td>`;
       default: return '<td></td>';
     }
   }).join('');
   return `<tr class="${t.statusNorm === 'open' ? 'row-open' : ''}" data-trade="${esc(t.id)}">${cells}</tr>`;
 }
-const COL_HEAD = { symbol: 'Symbol', date: 'Signal Date', entry: 'Entry', sl: 'SL', tp: 'TP', status: 'Status', exitPrice: 'Exit Price', exitDate: 'Exit Date', return: 'Return', daysOpen: 'Days Open', latestMP: 'Latest Max Profit', latestML: 'Latest Max Loss' };
+const COL_HEAD = { symbol: 'Symbol', direction: 'Side', date: 'Signal Date', entry: 'Entry', sl: 'SL', tp: 'TP', status: 'Status', exitPrice: 'Exit Price', exitDate: 'Exit Date', return: 'Return', daysOpen: 'Days Open', latestMP: 'Max Profit', latestML: 'Max Loss', latestDD: 'Max Drawdown', latestPnL: 'Current P&L' };
 function tradesTable(trades, cols, sortable = false) {
   if (!trades.length) return `<div class="empty-state"><span class="empty-icon">\u{1F4ED}</span>No trades found</div>`;
   const head = cols.map(c => `<th ${sortable ? `class="sortable" data-sort="${c}"` : ''}>${COL_HEAD[c]}</th>`).join('');
@@ -374,15 +402,22 @@ function openTradeModal(id) {
   closeModal();
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay'; overlay.id = 'trade-modal';
+  const latest = t.daily[t.daily.length - 1];
   const info = [
-    ['Signal Date', esc(t.signalDateStr)], ['Entry', fmtNum(t.entry)], ['Stop Loss', fmtNum(t.sl)],
+    ['Signal Date', esc(t.signalDateStr)], ['Side', DIR_LABEL[t.direction]],
+    ['Entry', fmtNum(t.entry)], ['Stop Loss', fmtNum(t.sl)],
     ['Target', fmtNum(t.tp)], ['Exit Price', fmtNum(t.exitPrice)], ['Exit Date', esc(t.exitDateRaw || '\u2013')],
-    ['Return', `<span class="${pctClass(t.returnPct)}">${fmtPct(t.returnPct)}</span>`],
+    [t.statusNorm === 'open' ? 'Current P&L' : 'Return',
+      t.statusNorm === 'open'
+        ? `<span class="${pctClass(latest?.currentPnL)}">${fmtPct(latest?.currentPnL)}</span>`
+        : `<span class="${pctClass(t.returnPct)}">${fmtPct(t.returnPct)}</span>`],
+    ['Max Drawdown', `<span class="${pctClass(latest?.maxDrawdown)}">${fmtPct(latest?.maxDrawdown)}</span>`],
     [t.statusNorm === 'open' ? 'Days Open' : 'Holding Days', t.statusNorm === 'open' ? (t.daysOpen ?? '\u2013') : (t.holdingDays ?? '\u2013')],
   ].map(([l, v]) => `<div class="kpi-card"><div class="kpi-label">${l}</div><div class="kpi-value">${v}</div></div>`).join('');
+  const cell = (v) => `<td class="${pctClass(v)}">${fmtPct(v)}</td>`;
   const dailyRows = t.daily.length
-    ? t.daily.map(d => `<tr><td>${esc(d.date)}</td><td class="${pctClass(d.maxProfit)}">${fmtPct(d.maxProfit)}</td><td class="${pctClass(d.maxLoss)}">${fmtPct(d.maxLoss)}</td></tr>`).join('')
-    : `<tr><td colspan="3" class="empty-state">No daily performance data yet</td></tr>`;
+    ? t.daily.map(d => `<tr><td>${esc(d.date)}</td>${cell(d.dayMaxProfit)}${cell(d.dayMaxLoss)}${cell(d.maxProfit)}${cell(d.maxLoss)}${cell(d.maxDrawdown)}${cell(d.currentPnL)}</tr>`).join('')
+    : `<tr><td colspan="7" class="empty-state">No daily performance data yet</td></tr>`;
   overlay.innerHTML = `
     <div class="modal" role="dialog" aria-modal="true">
       <div class="modal-head">
@@ -391,9 +426,9 @@ function openTradeModal(id) {
       </div>
       <div class="modal-body">
         <div class="trade-info-grid">${info}</div>
-        <div class="card chart-card"><h4>Daily Max Profit / Max Loss Progression</h4><canvas id="trade-chart"></canvas></div>
+        <div class="card chart-card"><h4>Daily Progression</h4><canvas id="trade-chart"></canvas></div>
         <h4 style="margin-top:1.2rem">Daily Performance</h4>
-        <div class="table-wrap"><table class="data"><thead><tr><th>Date</th><th>Daily Max Profit %</th><th>Daily Max Loss %</th></tr></thead><tbody>${dailyRows}</tbody></table></div>
+        <div class="table-wrap"><table class="data"><thead><tr><th>Date</th><th>Day Max Profit %</th><th>Day Max Loss %</th><th>Max Profit %</th><th>Max Loss %</th><th>Max Drawdown %</th><th>Current P&amp;L %</th></tr></thead><tbody>${dailyRows}</tbody></table></div>
         <p class="muted" style="color:var(--text-2);font-size:.8rem">Source file: <a href="${esc(DataSource.fileUrl(t.file))}" target="_blank" rel="noopener">${esc(t.file)}</a></p>
       </div>
     </div>`;
@@ -406,6 +441,8 @@ function openTradeModal(id) {
       data: { labels: t.daily.map(d => d.date), datasets: [
         { label: 'Max Profit %', data: t.daily.map(d => d.maxProfit), borderColor: cssVar('--green'), backgroundColor: 'transparent', tension: .25, pointRadius: 3 },
         { label: 'Max Loss %', data: t.daily.map(d => d.maxLoss), borderColor: cssVar('--red'), backgroundColor: 'transparent', tension: .25, pointRadius: 3 },
+        { label: 'Current P&L %', data: t.daily.map(d => d.currentPnL), borderColor: cssVar('--accent'), backgroundColor: 'transparent', tension: .25, pointRadius: 3, borderWidth: 2 },
+        { label: 'Max Drawdown %', data: t.daily.map(d => d.maxDrawdown), borderColor: cssVar('--amber'), backgroundColor: 'transparent', tension: .25, pointRadius: 2, borderDash: [4, 3] },
       ]},
       options: baseChartOpts({ interaction: { mode: 'index', intersect: false } }),
     });
@@ -501,7 +538,7 @@ function renderIndex() {
         card.classList.toggle('expanded');
         const body = card.querySelector('.day-body');
         if (card.classList.contains('expanded') && !body.dataset.rendered) {
-          body.innerHTML = tradesTable(sortOpenFirst(f.trades), ['symbol', 'entry', 'sl', 'tp', 'status', 'exitPrice', 'exitDate']);
+          body.innerHTML = tradesTable(sortOpenFirst(f.trades), ['symbol', 'direction', 'entry', 'sl', 'tp', 'status', 'exitPrice', 'exitDate']);
           body.dataset.rendered = '1';
         }
       });
@@ -589,11 +626,15 @@ function renderIndex() {
 function renderActive() {
   const all = sortOpenFirst(State.trades.filter(t => t.statusNorm === 'open'));
   $('#active-count-badge').textContent = `${all.length} open`;
-  const cols = ['symbol', 'date', 'entry', 'sl', 'tp', 'daysOpen', 'latestMP', 'latestML'];
+  const cols = ['symbol', 'direction', 'date', 'entry', 'sl', 'tp', 'daysOpen', 'latestPnL', 'latestMP', 'latestML', 'latestDD'];
+  const last = t => t.daily[t.daily.length - 1];
   const sortKeys = {
-    symbol: t => t.symbol, date: t => t.signalDate?.getTime() || 0, entry: t => t.entry ?? -1e18,
+    symbol: t => t.symbol, direction: t => t.direction,
+    date: t => t.signalDate?.getTime() || 0, entry: t => t.entry ?? -1e18,
     sl: t => t.sl ?? -1e18, tp: t => t.tp ?? -1e18, daysOpen: t => t.daysOpen ?? -1,
-    latestMP: t => t.daily[t.daily.length - 1]?.maxProfit ?? -1e18, latestML: t => t.daily[t.daily.length - 1]?.maxLoss ?? -1e18,
+    latestPnL: t => last(t)?.currentPnL ?? -1e18,
+    latestMP: t => last(t)?.maxProfit ?? -1e18, latestML: t => last(t)?.maxLoss ?? -1e18,
+    latestDD: t => last(t)?.maxDrawdown ?? -1e18,
   };
   let state = { q: '', page: 1, pageSize: 25, sort: null, dir: 1 };
   const tableEl = $('#active-table'), pagEl = $('#active-pagination');
@@ -628,10 +669,12 @@ function renderActive() {
   });
   $('#active-export').addEventListener('click', () => {
     const rows = filtered();
-    const header = ['Symbol', 'Signal Date', 'Entry', 'SL', 'TP', 'Days Open', 'Latest Max Profit', 'Latest Max Loss'];
+    const header = ['Symbol', 'Side', 'Signal Date', 'Entry', 'SL', 'TP', 'Days Open',
+      'Current P&L', 'Max Profit', 'Max Loss', 'Max Drawdown'];
     const csv = [header.join(',')].concat(rows.map(t => {
-      const d = t.daily[t.daily.length - 1];
-      return [t.symbol, t.signalDateStr, t.entry ?? '', t.sl ?? '', t.tp ?? '', t.daysOpen ?? '', d?.maxProfit ?? '', d?.maxLoss ?? '']
+      const d = last(t);
+      return [t.symbol, DIR_LABEL[t.direction], t.signalDateStr, t.entry ?? '', t.sl ?? '', t.tp ?? '',
+        t.daysOpen ?? '', d?.currentPnL ?? '', d?.maxProfit ?? '', d?.maxLoss ?? '', d?.maxDrawdown ?? '']
         .map(v => `"${String(v).replace(/"/g, '""')}"`).join(',');
     })).join('\n');
     const a = document.createElement('a');
@@ -687,7 +730,7 @@ function renderSignals() {
         card.classList.toggle('expanded');
         const body = card.querySelector('.day-body');
         if (card.classList.contains('expanded') && !body.dataset.rendered) {
-          body.innerHTML = tradesTable(sortOpenFirst(f.trades), ['symbol', 'entry', 'sl', 'tp', 'status', 'exitPrice', 'exitDate']);
+          body.innerHTML = tradesTable(sortOpenFirst(f.trades), ['symbol', 'direction', 'entry', 'sl', 'tp', 'status', 'exitPrice', 'exitDate']);
           body.dataset.rendered = '1';
         }
       });
