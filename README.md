@@ -106,8 +106,9 @@ can be deleted.
 
 - `index.html` — KPI dashboard, active signal summary, open-trade age chart, latest trading days,
   performance charts, analytics, leaderboards, repository activity.
-- `active-signals.html` — Live watchlist of open trades with side, current P&L, max profit/loss
-  and max drawdown; search, sorting, pagination, CSV export.
+- `active-signals.html` — Live watchlist of open trades showing side, current P&L, the latest
+  session's day max profit/loss, the running max profit/loss and max drawdown; every column
+  sortable, plus search, pagination and CSV export.
 - `signals.html` — Browser for every CSV file with per-file statistics.
 - Clicking any trade opens a detail modal with the full six-metric daily table and a progression
   chart.

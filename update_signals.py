@@ -443,6 +443,11 @@ def process(args):
         if args.add_direction:
             sf.add_direction_column()
         sf.ensure_columns(TRACKING_COLUMNS)
+        # Spell "Open" out rather than leaving the cell blank.  Both readers
+        # treat blank as open, but a self-describing file is worth the bytes.
+        for row in sf.rows:
+            if sf.get(row, "Symbol") and not sf.get(row, "Status"):
+                sf.set(row, "Status", "Open")
         has_open = False
         for row in sf.rows:
             symbol = sf.get(row, "Symbol")
@@ -484,27 +489,30 @@ def process(args):
         print(f"! Oldest open file trails {start}; clamping to {floor} "
               f"(raise --max-lookback-days to backfill further)")
         start = floor
+    # Deliberately not an early return: schema work done during load (new
+    # tracking columns, Direction, an explicit Open status) must still be
+    # written even when there is no new session to apply.
+    prices, sessions = {}, []
     if start > end:
-        print(f"Already current through {end}. Nothing to do.")
-        return 0, []
-
-    print(f"Fetching {len(open_symbols)} symbols, {start} -> {end}")
-    if args.offline_prices:
-        prices = fetch_prices_csv(args.offline_prices)
+        print(f"Already current through {end}.")
     else:
-        prices = fetch_prices_yf(sorted(open_symbols), start, end, args.suffix)
+        print(f"Fetching {len(open_symbols)} symbols, {start} -> {end}")
+        if args.offline_prices:
+            prices = fetch_prices_csv(args.offline_prices)
+        else:
+            prices = fetch_prices_yf(sorted(open_symbols), start, end, args.suffix)
 
-    missing = sorted(open_symbols - set(prices))
-    if missing:
-        print(f"! No price data for {len(missing)} symbol(s): {', '.join(missing[:10])}"
-              + (" ..." if len(missing) > 10 else ""))
+        missing = sorted(open_symbols - set(prices))
+        if missing:
+            print(f"! No price data for {len(missing)} symbol(s): {', '.join(missing[:10])}"
+                  + (" ..." if len(missing) > 10 else ""))
 
-    sessions = sorted({d for bars in prices.values() for d in bars
-                       if start.isoformat() <= d <= end.isoformat()})
-    if not sessions:
-        print("No trading sessions in range (weekend or holiday?).")
-        return 0, []
-    print(f"Sessions to apply: {', '.join(sessions)}")
+        sessions = sorted({d for bars in prices.values() for d in bars
+                           if start.isoformat() <= d <= end.isoformat()})
+        if sessions:
+            print(f"Sessions to apply: {', '.join(sessions)}")
+        else:
+            print("No trading sessions in range (weekend or holiday?).")
 
     changed, contested, exits = [], [], []
     for sf in loaded:

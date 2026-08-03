@@ -351,6 +351,8 @@ function tradeRow(t, cols) {
       case 'exitDate': return `<td>${esc(t.exitDateRaw || '\u2013')}</td>`;
       case 'return': return `<td class="${pctClass(t.returnPct)}">${fmtPct(t.returnPct)}</td>`;
       case 'daysOpen': return `<td>${t.daysOpen ?? '\u2013'}</td>`;
+      case 'latestDayMP': { const d = t.daily[t.daily.length - 1]; return `<td class="${pctClass(d?.dayMaxProfit)}">${fmtPct(d?.dayMaxProfit)}</td>`; }
+      case 'latestDayML': { const d = t.daily[t.daily.length - 1]; return `<td class="${pctClass(d?.dayMaxLoss)}">${fmtPct(d?.dayMaxLoss)}</td>`; }
       case 'latestMP': { const d = t.daily[t.daily.length - 1]; return `<td class="${pctClass(d?.maxProfit)}">${fmtPct(d?.maxProfit)}</td>`; }
       case 'latestML': { const d = t.daily[t.daily.length - 1]; return `<td class="${pctClass(d?.maxLoss)}">${fmtPct(d?.maxLoss)}</td>`; }
       case 'latestDD': { const d = t.daily[t.daily.length - 1]; return `<td class="${pctClass(d?.maxDrawdown)}">${fmtPct(d?.maxDrawdown)}</td>`; }
@@ -361,7 +363,8 @@ function tradeRow(t, cols) {
   }).join('');
   return `<tr class="${t.statusNorm === 'open' ? 'row-open' : ''}" data-trade="${esc(t.id)}">${cells}</tr>`;
 }
-const COL_HEAD = { symbol: 'Symbol', direction: 'Side', date: 'Signal Date', entry: 'Entry', sl: 'SL', tp: 'TP', status: 'Status', exitPrice: 'Exit Price', exitDate: 'Exit Date', return: 'Return', daysOpen: 'Days Open', latestMP: 'Max Profit', latestML: 'Max Loss', latestDD: 'Max Drawdown', latestPnL: 'Current P&L' };
+const COL_HEAD = { symbol: 'Symbol', direction: 'Side', date: 'Signal Date', entry: 'Entry', sl: 'SL', tp: 'TP', status: 'Status', exitPrice: 'Exit Price', exitDate: 'Exit Date', return: 'Return', daysOpen: 'Days Open', latestDayMP: 'Day Max Profit', latestDayML: 'Day Max Loss',
+  latestMP: 'Max Profit', latestML: 'Max Loss', latestDD: 'Max Drawdown', latestPnL: 'Current P&L' };
 function tradesTable(trades, cols, sortable = false) {
   if (!trades.length) return `<div class="empty-state"><span class="empty-icon">\u{1F4ED}</span>No trades found</div>`;
   const head = cols.map(c => `<th ${sortable ? `class="sortable" data-sort="${c}"` : ''}>${COL_HEAD[c]}</th>`).join('');
@@ -626,13 +629,15 @@ function renderIndex() {
 function renderActive() {
   const all = sortOpenFirst(State.trades.filter(t => t.statusNorm === 'open'));
   $('#active-count-badge').textContent = `${all.length} open`;
-  const cols = ['symbol', 'direction', 'date', 'entry', 'sl', 'tp', 'daysOpen', 'latestPnL', 'latestMP', 'latestML', 'latestDD'];
+  const cols = ['symbol', 'direction', 'date', 'entry', 'sl', 'tp', 'daysOpen',
+    'latestPnL', 'latestDayMP', 'latestDayML', 'latestMP', 'latestML', 'latestDD'];
   const last = t => t.daily[t.daily.length - 1];
   const sortKeys = {
     symbol: t => t.symbol, direction: t => t.direction,
     date: t => t.signalDate?.getTime() || 0, entry: t => t.entry ?? -1e18,
     sl: t => t.sl ?? -1e18, tp: t => t.tp ?? -1e18, daysOpen: t => t.daysOpen ?? -1,
     latestPnL: t => last(t)?.currentPnL ?? -1e18,
+    latestDayMP: t => last(t)?.dayMaxProfit ?? -1e18, latestDayML: t => last(t)?.dayMaxLoss ?? -1e18,
     latestMP: t => last(t)?.maxProfit ?? -1e18, latestML: t => last(t)?.maxLoss ?? -1e18,
     latestDD: t => last(t)?.maxDrawdown ?? -1e18,
   };
@@ -670,11 +675,12 @@ function renderActive() {
   $('#active-export').addEventListener('click', () => {
     const rows = filtered();
     const header = ['Symbol', 'Side', 'Signal Date', 'Entry', 'SL', 'TP', 'Days Open',
-      'Current P&L', 'Max Profit', 'Max Loss', 'Max Drawdown'];
+      'Current P&L', 'Day Max Profit', 'Day Max Loss', 'Max Profit', 'Max Loss', 'Max Drawdown'];
     const csv = [header.join(',')].concat(rows.map(t => {
       const d = last(t);
       return [t.symbol, DIR_LABEL[t.direction], t.signalDateStr, t.entry ?? '', t.sl ?? '', t.tp ?? '',
-        t.daysOpen ?? '', d?.currentPnL ?? '', d?.maxProfit ?? '', d?.maxLoss ?? '', d?.maxDrawdown ?? '']
+        t.daysOpen ?? '', d?.currentPnL ?? '', d?.dayMaxProfit ?? '', d?.dayMaxLoss ?? '',
+        d?.maxProfit ?? '', d?.maxLoss ?? '', d?.maxDrawdown ?? '']
         .map(v => `"${String(v).replace(/"/g, '""')}"`).join(',');
     })).join('\n');
     const a = document.createElement('a');
